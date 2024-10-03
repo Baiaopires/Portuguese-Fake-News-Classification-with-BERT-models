@@ -9,5 +9,5 @@ Repository with the python scripts used in the training and fine-tuning of the m
 	<img src="https://github.com/Baiaopires/Portuguese-Fake-News-Classification-with-BERT-models/blob/main/z-Images/Nvidia_Smi_Result.png">
 </div>
 
-- <div align="justify">- Check if you have enough space where the models, logs and plots will be saved;</div>
-- <div align="justify">- Check if all the necessary dependencies are installed, like Python and it's libraries.</div>
+- <div align="justify">Check if you have enough space where the models, logs and plots will be saved;</div>
+- <div align="justify">Check if all the necessary dependencies are installed, like Python and it's libraries.</div>

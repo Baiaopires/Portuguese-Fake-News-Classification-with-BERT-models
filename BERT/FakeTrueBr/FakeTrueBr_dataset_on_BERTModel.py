@@ -11,6 +11,7 @@ warnings.filterwarnings('ignore')
 
 ############################################################################################################################################################################################################################################################
 
+# Getting and manipulating the Dataset
 df = pd.read_csv('https://raw.githubusercontent.com/jpchav98/FakeTrue.Br/main/FakeTrueBr_corpus.csv', delimiter=',', skiprows = lambda x: x in [0], header=None)
 df.drop(columns=[0, 2, 4], inplace=True)
 df = pd.concat([df[1].append(df[3].iloc[:]).reset_index(drop=True)])
@@ -27,7 +28,7 @@ labels = df[1]
 
 ############################################################################################################################################################################################################################################################
 
-#converting arrays to tensors so that Torch functions work properly
+# Converting arrays to tensors so that pytorch functions work properly
 tokenizer = ppb.BertTokenizer.from_pretrained(
     'bert-base-uncased',
     do_lower_case = True
@@ -36,6 +37,7 @@ tokenizer = ppb.BertTokenizer.from_pretrained(
 tokenized = []
 attention_masks = []
 
+# Tokenizing Function
 def preprocessing(input_text, tokenizer):
   return tokenizer.encode_plus(
                         input_text,
@@ -46,6 +48,7 @@ def preprocessing(input_text, tokenizer):
                         return_tensors = 'pt'
                    )
 
+# Preprocessing the Dataset
 for sample in df[0].values:
     encoding_dict = preprocessing(sample, tokenizer)
     tokenized.append(encoding_dict['input_ids'])
@@ -55,10 +58,12 @@ tokenized = torch.cat(tokenized, dim = 0)
 attention_masks = torch.cat(attention_masks, dim = 0)
 labels = torch.tensor(labels)
 
+# Setting the train, validation and test sets proportions
 val_plus_test_ratio = 0.4
 test_ratio = 0.5 # 50% of 40%, which is 20% of the total
 batch_size = 128
 
+# Splitting and shuffling the preprocessed dataset into the train, validation and test sets
 train_idx, val_plus_test_idx = train_test_split(
     np.arange(len(labels)),
     test_size = val_plus_test_ratio,
@@ -91,6 +96,8 @@ validation_dataloader = DataLoader(
                 )
 
 ############################################################################################################################################################################################################################################################
+
+# Functions used to calculate the accuracy, precision, recall and specificity
 
 #true positives
 def b_tp(preds, labels):
@@ -133,6 +140,7 @@ def b_metrics(preds, labels):
 
 ############################################################################################################################################################################################################################################################
 
+# Getting the model
 model = ppb.BertForSequenceClassification.from_pretrained(
     'bert-base-uncased',
     num_labels = 2,
@@ -140,11 +148,12 @@ model = ppb.BertForSequenceClassification.from_pretrained(
     output_hidden_states = False
 )
 
-#use of gpu if available (put "if torch.cuda.is_available() else 'cpu' after the 'cpu' argument in torch.device()" to choose cpu if gpu doesn't work)
+# Use of gpu if available (put "if torch.cuda.is_available() else 'cpu' after the 'cpu' argument in torch.device()" to choose cpu if gpu doesn't work)
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
 model.cuda(device)
 
+# Optimizer settings
 optimizer = torch.optim.AdamW(model.parameters(),
                             lr = 5e-5,
                             eps = 5e-08
@@ -152,6 +161,7 @@ optimizer = torch.optim.AdamW(model.parameters(),
 
 ############################################################################################################################################################################################################################################################
 
+# Setting the early stopping technique
 class EarlyStopping(object):
     def __init__(self, mode='min', min_delta=0, patience=10, percentage=False):
         self.mode = mode
@@ -211,6 +221,7 @@ class EarlyStopping(object):
 
 ############################################################################################################################################################################################################################################################
 
+# Initializing variables
 val_loss = 1
 best_val_accuracy = 0
 best_epoch = 0
@@ -222,10 +233,12 @@ y = []
 
 es = EarlyStopping(patience=100)
 
+# Function used for the early stop to happen only when val_loss reach some value
 def generator():
   while not(es.step(val_loss)):
     yield
 
+# Train, validation and fine-tune loop
 for _ in tqdm.tqdm(generator()):
 
   model.train()
@@ -234,6 +247,7 @@ for _ in tqdm.tqdm(generator()):
   tr_loss = 0
   nb_tr_examples, nb_tr_steps = 0, 0
 
+  # Training steps
   for step, batch in enumerate(train_dataloader):
     batch = tuple(t.to(device) for t in batch)
     b_input_ids, b_input_mask, b_labels = batch
@@ -261,6 +275,7 @@ for _ in tqdm.tqdm(generator()):
   val_recall = []
   val_specificity = []
 
+  # Validation steps
   for batch in validation_dataloader:
     batch = tuple(t.to(device) for t in batch)
     b_input_ids, b_input_mask, b_labels = batch
@@ -278,12 +293,14 @@ for _ in tqdm.tqdm(generator()):
     if b_recall != 'nan': val_recall.append(b_recall)
     if b_specificity != 'nan': val_specificity.append(b_specificity)
 
+  # Saving the data for the plot coming afterwards
   y.append(sum(val_accuracy)/len(val_accuracy))
   x.append(epoch_counter)
 
   epoch_counter += 1
   val_loss = 1 - (sum(val_accuracy)/len(val_accuracy))
 
+  # Saving the best model
   if((sum(val_accuracy)/len(val_accuracy)) > best_val_accuracy):
     best_val_accuracy = (sum(val_accuracy)/len(val_accuracy)),
     best_epoch = epoch_counter
@@ -296,8 +313,7 @@ for _ in tqdm.tqdm(generator()):
       print(' - Occurence of Best Validation Accuracy In This Epoch')
   else: print('\n', end = '')
 
-  #printing the average accuracy, precision, recall and specificity metrics obtained in validation
-
+  # Printing the average accuracy, precision, recall and specificity metrics obtained in validation
   print('\t - Train loss: {:.8f}'.format(tr_loss / nb_tr_steps))
   print('\t - Validation Accuracy: {:.8f}'.format(sum(val_accuracy)/len(val_accuracy)))
   print('\t - Validation Precision: {:.8f}'.format(sum(val_precision)/len(val_precision)) if len(val_precision)>0 else '\t - Validation Precision: NaN')
@@ -306,16 +322,17 @@ for _ in tqdm.tqdm(generator()):
 
 ############################################################################################################################################################################################################################################################
 
+# Plot and saving of the graph with it's axes being the number of epochs and the validation accuracy in the train, validation and fine-tuning loop
 plt.plot(x, y)
 plt.xlabel('Number of Epochs')
 plt.ylabel('Validation Accuracy')
-#plt.ylim(0, 1)
 plt.xlim(0, epoch_counter)
 plt.savefig("./Plots/Plot_FakeTrueBr_Dataset_On_BERTModel_val_acc_{0}.png".format(best_val_accuracy), bbox_inches='tight')
 plt.show()
 
 ############################################################################################################################################################################################################################################################
 
+# Selecting the best model trained in the train, validation and fine-tuning loop
 model = ppb.AutoModelForSequenceClassification.from_pretrained(
     "./Models/FakeTrueBr_on_BERTModel_FineTunned_Model_epoch_{0}_val_acc_{1}".format(best_epoch, best_val_accuracy),
     num_labels = 2,
@@ -323,6 +340,7 @@ model = ppb.AutoModelForSequenceClassification.from_pretrained(
     output_hidden_states = False
 )
 
+# Some useful parameters
 test_sum_of_true_positives = 0
 test_sum_of_false_positives = 0
 test_sum_of_true_negatives = 0
@@ -332,6 +350,7 @@ test_precision = 0
 test_recall = 0
 test_specificity = 0
 
+# Test of the model with the best validation in the train, validation and fine-tuning loop
 for i in range(len(test_idx)):
   new_sentence = df[0][test_idx[i]]
 
@@ -358,11 +377,13 @@ for i in range(len(test_idx)):
   if((prediction == 0) and (df[1][test_idx[i]] == 0)): test_sum_of_true_negatives += 1
   if((prediction == 0) and (df[1][test_idx[i]] == 1)): test_sum_of_false_negatives += 1
 
+# Calculation of the accuracy, precision, recall and specificity metrics
 test_accuracy = ((test_sum_of_true_positives + test_sum_of_true_negatives)/(len(test_idx)))
 test_precision = test_sum_of_true_positives / (test_sum_of_true_positives + test_sum_of_false_positives) if (test_sum_of_true_positives + test_sum_of_true_positives) > 0 else 'nan'
 test_recall = test_sum_of_true_positives / (test_sum_of_true_positives + test_sum_of_false_negatives) if (test_sum_of_true_positives + test_sum_of_false_negatives) > 0 else 'nan'
 test_specificity = test_sum_of_true_negatives / (test_sum_of_true_negatives + test_sum_of_false_positives) if (test_sum_of_true_positives + test_sum_of_false_positives) > 0 else 'nan'
 
+# Printing of the results of the test step
 print(' - Test Accuracy: {:.8f}'.format(test_accuracy))
 print(' - Test Precision: {:.8f}'.format(test_precision) if len(test_idx) > 0 else '\t - Test Precision: NaN')
 print(' - Test Recall: {:.8f}'.format(test_recall) if len(test_idx) > 0 else '\t - Test Recall: NaN')
